@@ -5,7 +5,7 @@ import logging
 import time
 from dataclasses import dataclass
 from typing import Optional
-
+import os
 import openai
 import pandas as pd
 
@@ -380,9 +380,11 @@ class UserSessionManager:
             self._load_sharegpt_data()
 
     def _load_sharegpt_data(self):
-        # with open("ShareGPT.json", "r", encoding="utf-8") as file:
-        with open(data_file, "r", encoding="utf-8") as file:
+        # with open("sharegpt.json", "r", encoding="utf-8") as file:
+        current_file_path = os.path.abspath(__file__)
+        with open(os.path.join(os.path.dirname(current_file_path), data_file), "r", encoding="utf-8") as file:
             self.sharegpt_data = json.load(file)
+        print(f"使用 {data_file} 数据集文件")
         self.sharegpt_data = [
             d
             for d in self.sharegpt_data
@@ -557,9 +559,9 @@ def parse_arguments() -> WorkloadConfig:
     parser = argparse.ArgumentParser(description="Parse benchmark configurations.")
 
     parser.add_argument(
-        "--data_file",
+        "--data-file",
         type=str,
-        default="ShareGPT.json"
+        default="sharegpt.json"
     )
 
     parser.add_argument(
@@ -639,7 +641,7 @@ def parse_arguments() -> WorkloadConfig:
         "--verbose", action="store_true", help="Whether to enable verbose logging"
     )
     parser.add_argument(
-        "--sharegpt", action="store_true", help="Whether to use ShareGPT dataset"
+        "--sharegpt", action="store_true", help="Whether to use sharegpt dataset"
     )
 
     args = parser.parse_args()
@@ -679,7 +681,7 @@ def main():
         logger = init_logger(__name__, log_level=logging.DEBUG)
 
     if args.num_rounds == 1:
-        step_interval = 0.01
+        step_interval = 0.1
     else:
         step_interval = 0.1
 

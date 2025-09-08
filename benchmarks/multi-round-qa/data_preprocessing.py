@@ -16,16 +16,16 @@ parser.add_argument(
 parser.add_argument(
     "--dataset",
     type=str,
-    default="ShareGPT",
-    help="The dataset to process. Default is ShareGPT.",
+    default="sharegpt",
+    help="The dataset to process. Default is sharegpt.",
 )
 args = parser.parse_args()
 
-if args.dataset == "ShareGPT":
+if args.dataset == "sharegpt":
     with open("ShareGPT_V3_unfiltered_cleaned_split.json", "r", encoding="utf-8") as file:
         data = json.load(file)
-elif args.dataset == "Coder":
-    with open("Coder_preprocess_data.json", "r", encoding="utf-8") as file:
+elif args.dataset == "coder":
+    with open("coder_preprocess_data.json", "r", encoding="utf-8") as file:
         data = json.load(file)
 
 def estimate_num_tokens(text: str) -> int:
@@ -72,9 +72,9 @@ for d in data:
 # Remove the data that has two consecutive human rounds
 del data[260]
 
-if args.dataset == "ShareGPT":
-    with open("ShareGPT.json", "w", encoding="utf-8") as file:
+if args.dataset == "sharegpt":
+    with open("sharegpt.json", "w", encoding="utf-8") as file:
         json.dump(data, file, ensure_ascii=False, indent=2)
-elif args.dataset == "Coder":
-    with open("Coder.json", "w", encoding="utf-8") as file:
+elif args.dataset == "coder":
+    with open("coder.json", "w", encoding="utf-8") as file:
         json.dump(data, file, ensure_ascii=False, indent=2)

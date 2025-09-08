@@ -16,7 +16,7 @@ for item in dataset:
     converted_data.append(converted_item)
 
 # 写入输出JSON文件
-output_path = "./Coder_preprocess_data.json"
+output_path = "./coder_preprocess_data.json"
 with open(output_path, "w", encoding="utf-8") as f:
     json.dump(converted_data, f, indent=2, ensure_ascii=False)
 
