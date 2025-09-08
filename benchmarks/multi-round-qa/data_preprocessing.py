@@ -13,20 +13,28 @@ parser.add_argument(
     help="The percentage of data to process (0 to 1). Default is 1 (100%).",
 )
 
+parser.add_argument(
+    "--dataset",
+    type=str,
+    default="ShareGPT",
+    help="The dataset to process. Default is ShareGPT.",
+)
 args = parser.parse_args()
 
-with open("ShareGPT_V3_unfiltered_cleaned_split.json", "r", encoding="utf-8") as file:
-    data = json.load(file)
-
+if args.dataset == "ShareGPT":
+    with open("ShareGPT_V3_unfiltered_cleaned_split.json", "r", encoding="utf-8") as file:
+        data = json.load(file)
+elif args.dataset == "Coder":
+    with open("Coder_preprocess_data.json", "r", encoding="utf-8") as file:
+        data = json.load(file)
 
 def estimate_num_tokens(text: str) -> int:
     if not hasattr(estimate_num_tokens, "tokenizer"):
         os.environ["TOKENIZERS_PARALLELISM"] = "false"
         estimate_num_tokens.tokenizer = AutoTokenizer.from_pretrained(
-            "mistralai/Mistral-7B-Instruct-v0.2"
+            "gpt2"
         )
     return len(estimate_num_tokens.tokenizer.tokenize(text))
-
 
 num_of_ids = len(data)
 print(f"Number of IDs: {num_of_ids}")
@@ -64,5 +72,9 @@ for d in data:
 # Remove the data that has two consecutive human rounds
 del data[260]
 
-with open("ShareGPT.json", "w", encoding="utf-8") as file:
-    json.dump(data, file, ensure_ascii=False, indent=2)
+if args.dataset == "ShareGPT":
+    with open("ShareGPT.json", "w", encoding="utf-8") as file:
+        json.dump(data, file, ensure_ascii=False, indent=2)
+elif args.dataset == "Coder":
+    with open("Coder.json", "w", encoding="utf-8") as file:
+        json.dump(data, file, ensure_ascii=False, indent=2)

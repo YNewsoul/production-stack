@@ -13,7 +13,7 @@ from utils import AsyncLoopWrapper, init_logger
 
 logger = init_logger(__name__, logging.INFO)
 
-
+data_file = ""
 @dataclass
 class WorkloadConfig:
     # Max number of users in the system concurrently
@@ -253,13 +253,19 @@ class UserSession:
         )
         if self.use_sharegpt:
             if self.start_with_gpt:
-                max_tokens = self.sharegpt_data["conversations"][2 * self.question_id][
-                    "num_tokens"
-                ]
+                try:
+                    max_tokens = self.sharegpt_data["conversations"][2 * self.question_id][
+                        "num_tokens"
+                    ]
+                except:
+                    max_tokens = self.user_config.answer_len
             else:
-                max_tokens = self.sharegpt_data["conversations"][
-                    2 * self.question_id - 1
-                ]["num_tokens"]
+                try:
+                    max_tokens = self.sharegpt_data["conversations"][
+                        2 * self.question_id - 1
+                    ]["num_tokens"]
+                except:
+                    max_tokens = self.user_config.answer_len
             max_tokens = min(max_tokens, self.user_config.answer_len)
         else:
             max_tokens = self.user_config.answer_len
@@ -347,9 +353,12 @@ class UserSessionManager:
         self.sessions = []
 
         gap_between_requests_per_user = workload_config.num_users / workload_config.qps
-        session_alive_time = gap_between_requests_per_user * (
-            workload_config.num_rounds - 1
-        )
+        if workload_config.num_rounds == 1:
+            session_alive_time = gap_between_requests_per_user
+        else:
+            session_alive_time = gap_between_requests_per_user * (
+                workload_config.num_rounds - 1
+            )
         self.gap_between_users = session_alive_time / (workload_config.num_users + 0)
         self.ramp_up_time = workload_config.num_users * self.gap_between_users
 
@@ -371,12 +380,13 @@ class UserSessionManager:
             self._load_sharegpt_data()
 
     def _load_sharegpt_data(self):
-        with open("ShareGPT.json", "r", encoding="utf-8") as file:
+        # with open("ShareGPT.json", "r", encoding="utf-8") as file:
+        with open(data_file, "r", encoding="utf-8") as file:
             self.sharegpt_data = json.load(file)
         self.sharegpt_data = [
             d
             for d in self.sharegpt_data
-            if d["num_round"] > 2 * self.workload_config.num_rounds
+            if d["num_round"] >= 2 * self.workload_config.num_rounds
         ]
         logger.info(f"There are {len(self.sharegpt_data)} users satisfying ")
 
@@ -547,6 +557,12 @@ def parse_arguments() -> WorkloadConfig:
     parser = argparse.ArgumentParser(description="Parse benchmark configurations.")
 
     parser.add_argument(
+        "--data_file",
+        type=str,
+        default="ShareGPT.json"
+    )
+
+    parser.add_argument(
         "--num-users",
         type=int,
         required=True,
@@ -625,7 +641,10 @@ def parse_arguments() -> WorkloadConfig:
     parser.add_argument(
         "--sharegpt", action="store_true", help="Whether to use ShareGPT dataset"
     )
+
     args = parser.parse_args()
+    global data_file
+    data_file = args.data_file
     return args
 
 
@@ -659,7 +678,10 @@ def main():
         global logger
         logger = init_logger(__name__, log_level=logging.DEBUG)
 
-    step_interval = 0.1
+    if args.num_rounds == 1:
+        step_interval = 0.01
+    else:
+        step_interval = 0.1
 
     executor = RequestExecutor(
         base_url=args.base_url, api_key=args.api_key, model=args.model
