@@ -76,7 +76,6 @@ class UserConfig:
             enable_user_id=workload_config.enable_user_id,
         )
 
-
 class ChatHistory:
 
     def __init__(
@@ -85,6 +84,10 @@ class ChatHistory:
         self.history = []
 
     def on_user_query(self, query: str):
+        """
+        添加用户查询到聊天历史中
+        AssertionError: 如果当前历史记录最后一条不是系统响应，则抛出异常
+        """
         if len(self.history) == 0:
             self.history.append({"role": "user", "content": query})
         else:
@@ -92,11 +95,26 @@ class ChatHistory:
             self.history.append({"role": "user", "content": query})
 
     def on_system_response(self, response: str):
+        """
+        添加系统响应到聊天历史中
+        
+        Args:
+            response: 系统生成的响应字符串
+        
+        Raises:
+            AssertionError: 如果历史记录为空或最后一条不是用户查询，则抛出异常
+        """
         assert len(self.history) > 0, "Expect user query"
         assert self.history[-1]["role"] == "user", "Expect user query"
         self.history.append({"role": "assistant", "content": response})
 
     def get_messages_for_openai(self):
+        """
+        获取符合OpenAI API要求格式的消息列表
+        
+        Returns:
+            list: 包含所有历史消息的列表，每条消息包含role和content字段
+        """
         return self.history
 
     def __len__(self):
@@ -115,47 +133,70 @@ class Response:
 
 
 class RequestExecutor:
+    """
+    请求执行器类，负责处理与OpenAI API的交互，包括发送请求和处理响应。
 
+    该类封装了与OpenAI API的异步通信逻辑，支持流式响应处理，并收集性能指标如
+    首次token响应时间(TTFT)、生成时间、token统计等。
+    """
     def __init__(self, base_url: str, api_key: str, model: str):
         self.client = openai.AsyncOpenAI(api_key=api_key, base_url=base_url)
         self.model = model
+        # 获取或启动异步事件循环
         self.loop = AsyncLoopWrapper.GetOrStartLoop()
+        # 存储请求历史记录
         self.request_history = []
 
     async def _async_launch_request(self, messages, max_tokens, extra_headers=None):
+        """异步发起请求到OpenAI API并处理响应
+        
+        Args:
+            messages: 要发送的消息列表，格式符合OpenAI API要求
+            max_tokens: 生成响应的最大token数量
+            extra_headers: 可选的额外头信息
+        Returns:
+            Response对象，包含响应内容和性能指标
+        """
         start_time = time.time()
         first_token_time = None
+        # 存储生成的完整文本
         words = ""
 
+        # 发送异步请求到OpenAI API，启用流式响应
         response = await self.client.chat.completions.create(
             messages=messages,
             model=self.model,
-            temperature=0,
+            temperature=0, # 设置为0使输出更加确定性
             stream=True,
             max_tokens=max_tokens,
-            stream_options={"include_usage": True},
+            stream_options={"include_usage": True}, # 包含token使用统计
             extra_headers=extra_headers,
         )
 
+        # 处理流式响应
         async for tok in response:
             if not tok.choices:
                 continue
             chunk_message = tok.choices[0].delta.content
             if chunk_message is not None:
+                # 记录第一个非空token的到达时间
                 if first_token_time is None and chunk_message != "":
                     first_token_time = time.time()
+                # 累积生成的文本
                 words += chunk_message
-        tokens_out = tok.usage.completion_tokens
-        tokens_prefill = tok.usage.prompt_tokens
+        # 提取token使用统计信息
+        tokens_out = tok.usage.completion_tokens # 生成的token数量
+        tokens_prefill = tok.usage.prompt_tokens # 提示的token数量
 
+        # 构造并返回响应对象，包含性能指标
         return Response(
-            body=words,
-            ttft=first_token_time - start_time,
-            generation_time=time.time() - first_token_time,
-            prompt_tokens=tokens_prefill,
-            generation_tokens=tokens_out,
-            launch_time=start_time,
-            finish_time=time.time(),
+            body=words,                                         # 生成的完整文本
+            ttft=first_token_time - start_time,                 # ttft
+            generation_time=time.time() - first_token_time,     # 整体生成时间
+            prompt_tokens=tokens_prefill,                       # 提示的token数量
+            generation_tokens=tokens_out,                       # 生成的token数量
+            launch_time=start_time,                             # 请求开始时间
+            finish_time=time.time(),                            # 请求完成时间
         )
 
     def launch_request(
@@ -166,17 +207,36 @@ class RequestExecutor:
         extra_headers=None,
     ):
         """
+        同步接口，用于启动异步请求并设置回调函数
+        
+        Args:
+            chat_history: 聊天历史对象，包含要发送的消息
+            max_tokens: 生成响应的最大token数量
+            finish_callback: 请求完成时的回调函数，接收Response对象参数
+            extra_headers: 可选的额外HTTP头信息
+        """
+        """
         finish_callback: Callable[[Response], None]
         """
+        # 从聊天历史中获取格式化的消息
         messages = chat_history.get_messages_for_openai()
+        # 创建实际的回调函数，它会从future对象中提取结果并传递给用户提供的回调
         real_callback = lambda x: finish_callback(x.result())
+        # 在事件循环中提交异步任务
         future = asyncio.run_coroutine_threadsafe(
             self._async_launch_request(messages, max_tokens, extra_headers), self.loop
         )
+        # 添加完成回调
         future.add_done_callback(real_callback)
 
 
 class UserSession:
+    """
+    用户会话类，模拟单个用户与系统的交互过程
+    
+    该类负责管理用户的聊天历史、生成问题、发送请求并处理响应，
+    同时记录会话过程中的各项性能指标。
+    """
 
     def __init__(self, user_config: UserConfig, use_sharegpt=False, sharegpt_data=None):
         self.user_config = user_config
@@ -184,16 +244,20 @@ class UserSession:
         self.chat_history = ChatHistory()
         self.question_id = 0
         self.use_sharegpt = use_sharegpt
+        # 如果使用ShareGPT数据，初始化相关设置
         if self.use_sharegpt:
             self.sharegpt_data = sharegpt_data
+            # 确定对话开始者（用户或系统）
             if self.sharegpt_data["num_round"] % 2 == 0:
                 self.start_with_gpt = False
             else:
                 self.start_with_gpt = True
-
+        # 是否有未完成的请求
         self.has_unfinished_request = False
+        # 上次记录未完成请求的时间
         self.last_unfinished_log = 0
 
+        # 存储性能指标
         self.prompt_lengths = []
         self.generation_lengths = []
         self.ttfts = []
@@ -204,6 +268,12 @@ class UserSession:
         self.finished = False
 
     def _update_result(self, response: Response):
+        """
+        更新请求结果的统计信息
+        
+        Args:
+            response: API响应对象，包含响应内容和性能指标
+        """
         self.prompt_lengths.append(response.prompt_tokens)
         self.generation_lengths.append(response.generation_tokens)
         self.ttfts.append(response.ttft)
@@ -212,6 +282,7 @@ class UserSession:
         self.finish_times.append(response.finish_time)
 
     def _build_system_prompt(self):
+        """构建系统提示消息"""
 
         def gen_dummy_text(length):
             return " ".join(["hi"] * length)
@@ -226,6 +297,12 @@ class UserSession:
         return system_prompt
 
     def _build_new_question(self):
+        """
+        生成一个新的问题
+        
+        Returns:
+            str: 新生成的问题文本
+        """
         self.question_id += 1
         return (
             f"Here's question #{self.question_id}: can you tell me "
@@ -233,6 +310,14 @@ class UserSession:
         )
 
     def _launch_new_request(self, timestamp: float, request_executor: RequestExecutor):
+        """
+        发起一个新的请求
+        
+        Args:
+            timestamp: 当前时间戳
+            request_executor: 请求执行器，用于发送API请求
+        """
+        # 根据是否使用ShareGPT数据获取不同的提示文本
         if self.use_sharegpt:
             if self.start_with_gpt:
                 prompt = self.sharegpt_data["conversations"][2 * self.question_id + 1][
@@ -245,12 +330,17 @@ class UserSession:
             self.question_id += 1
         else:
             prompt = self._build_new_question()
-        if len(self.chat_history) == 0:
-            prompt = self._build_system_prompt() + prompt
+
+        # 如果是第一次请求，添加系统提示
+        # if len(self.chat_history) == 0:
+        #     prompt = self._build_system_prompt() + prompt
+
+        # 将用户查询添加到聊天历史
         self.chat_history.on_user_query(prompt)
         logger.debug(
             f"User {self.user_config.user_id} issues request {self.question_id}"
         )
+        # 确定生成响应的最大token数量
         if self.use_sharegpt:
             if self.start_with_gpt:
                 try:
@@ -269,6 +359,8 @@ class UserSession:
             max_tokens = min(max_tokens, self.user_config.answer_len)
         else:
             max_tokens = self.user_config.answer_len
+
+        # 发送请求
         request_executor.launch_request(
             self.chat_history,
             max_tokens,
@@ -278,7 +370,9 @@ class UserSession:
         self.has_unfinished_request = True
         self.last_request_time = timestamp
 
+    # 请求完成时的回调函数
     def _on_request_finished(self, response: Response):
+        # 将系统响应添加到聊天历史
         self.chat_history.on_system_response(response.body)
         self.has_unfinished_request = False
         logger.debug(
@@ -286,9 +380,17 @@ class UserSession:
             f"Prompt tokens: {response.prompt_tokens}, "
             f"generation tokens: {response.generation_tokens}"
         )
+        # 更新请求结果统计
         self._update_result(response)
 
     def set_internal_state(self, offset: float, timestamp: float):
+        """
+        设置会话的内部状态，模拟在指定时间点加入的用户
+        
+        Args:
+            offset: 会话开始相对于系统启动的偏移时间（秒）
+            timestamp: 当前时间戳
+        """
         """Tell the session is the 'offset' seconds after the start"""
         assert len(self.chat_history) == 0, (
             "Internal state should be set " "before the first request"
@@ -298,6 +400,7 @@ class UserSession:
 
         passed_time = (num_passed_questions - 1) * self.user_config.gap_between_requests
 
+        # 设置会话的内部状态
         self.last_request_time = timestamp - offset + passed_time
         self.question_id = num_passed_questions
         logger.debug(
@@ -307,6 +410,14 @@ class UserSession:
         )
 
     def step(self, timestamp: float, request_executor: RequestExecutor):
+        """
+        执行一个时间步，处理会话的状态更新和请求发送
+        
+        Args:
+            timestamp: 当前时间戳
+            request_executor: 请求执行器，用于发送API请求
+        """
+        # 检查会话是否已完成
         if (
             self.question_id >= self.user_config.num_rounds
             and not self.has_unfinished_request
@@ -314,20 +425,23 @@ class UserSession:
             self.finished = True
             return
 
+        # 如果是第一次请求，立即发送
         if self.last_request_time is None:
             self._launch_new_request(timestamp, request_executor)
             return
 
+        # 检查是否可以发送下一个请求
         if timestamp - self.last_request_time > self.user_config.gap_between_requests:
+            # 如果有未完成的请求，记录日志并等待
             if self.has_unfinished_request:
                 if timestamp - self.last_unfinished_log > 10:
-                    logger.warning(
-                        f"User {self.user_config.user_id} has an unfinished "
-                        "request and unable to fit the QPS requirement."
-                    )
+                    # logger.warning(
+                    #     f"User {self.user_config.user_id} has an unfinished "
+                    #     "request and unable to fit the QPS requirement."
+                    # )
                     self.last_unfinished_log = timestamp
                 return
-
+            # 发送下一个请求
             self._launch_new_request(timestamp, request_executor)
             return
 
@@ -345,6 +459,12 @@ class UserSession:
 
 
 class UserSessionManager:
+    """
+    用户会话管理器类，负责管理多个用户会话的生命周期和交互过程
+    
+    该类处理用户会话的创建、初始化、执行和清理，实现多用户场景下的负载模拟，
+    并提供性能统计功能以评估系统在多轮问答场景下的表现。
+    """
 
     def __init__(
         self, workload_config: WorkloadConfig, init_user_id=0, use_sharegpt=False
@@ -352,6 +472,7 @@ class UserSessionManager:
         self.workload_config = workload_config
         self.sessions = []
 
+         # 计算每个用户的请求之间的间隔时间
         gap_between_requests_per_user = workload_config.num_users / workload_config.qps
         if workload_config.num_rounds == 1:
             session_alive_time = gap_between_requests_per_user
@@ -359,7 +480,9 @@ class UserSessionManager:
             session_alive_time = gap_between_requests_per_user * (
                 workload_config.num_rounds - 1
             )
+        # 计算用户加入的间隔时间
         self.gap_between_users = session_alive_time / (workload_config.num_users + 0)
+        # 计算系统预热时间
         self.ramp_up_time = workload_config.num_users * self.gap_between_users
 
         logger.info(
@@ -385,6 +508,7 @@ class UserSessionManager:
         with open(os.path.join(os.path.dirname(current_file_path), data_file), "r", encoding="utf-8") as file:
             self.sharegpt_data = json.load(file)
         print(f"使用 {data_file} 数据集文件")
+        # 过滤出满足对话轮数要求的数据
         self.sharegpt_data = [
             d
             for d in self.sharegpt_data
@@ -393,17 +517,32 @@ class UserSessionManager:
         logger.info(f"There are {len(self.sharegpt_data)} users satisfying ")
 
     def _ramp_up(self, timestamp: float, ramp_up_time: float):
+        """
+        系统预热阶段，初始化多个用户会话
+        
+        Args:
+            timestamp: 当前时间戳
+            ramp_up_time: 预热时间
+        """
         for i in range(self.workload_config.num_users):
             new_session = self._create_user_session()
             offset = ramp_up_time - i * self.gap_between_users
             if offset < 0:
                 break
+            # 设置会话的内部状态，模拟不同时间点加入的用户
             new_session.set_internal_state(offset, timestamp)
         self.need_ramp_up = False
 
     def _create_user_session(self):
+        """
+        创建一个新的用户会话
+        
+        Returns:
+            UserSession: 新创建的用户会话对象
+        """
         self.user_id += 1
         user_config = UserConfig.new_user_config(self.user_id, self.workload_config)
+        # 根据是否使用ShareGPT数据集创建不同的用户会话
         if self.use_sharegpt:
             user_session = UserSession(
                 user_config, self.use_sharegpt, self.sharegpt_data[self.user_id]
@@ -414,23 +553,39 @@ class UserSessionManager:
         return user_session
 
     def _remove_finished_sessions(self):
+        """
+        移除已完成的会话，收集其统计信息
+        """
+        # 找出所有已完成的会话
         sessions_to_remove = [s for s in self.sessions if s.finished]
         if len(sessions_to_remove) > 0:
             logger.info(
                 f"Removing {len(sessions_to_remove)} finished sessions, now "
                 f"active users: {len(self.sessions) - len(sessions_to_remove)}"
             )
+            # 收集已完成会话的统计信息
             for session in sessions_to_remove:
                 self.session_summaries.append(session.summary())
+        # 更新会话列表，只保留未完成的会话
         self.sessions = [s for s in self.sessions if not s.finished]
 
     def step(self, timestamp: float, executor: RequestExecutor):
+        """
+        执行一个时间步，处理用户会话的状态更新和请求发送
+        
+        Args:
+            timestamp: 当前时间戳
+            executor: 请求执行器，用于发送API请求
+        """
+        # 处理系统预热
         if self.need_ramp_up:
             self._ramp_up(timestamp, self.ramp_up_time)
 
+        # 设置开始时间
         if self.start_time is None:
             self.start_time = timestamp
 
+        # 检查是否需要添加新用户
         if timestamp - self.last_user_join > self.gap_between_users:
             self._create_user_session()
             self.last_user_join = timestamp
@@ -438,10 +593,10 @@ class UserSessionManager:
                 f"Joined a new user {self.user_id}, "
                 f"now active users: {len(self.sessions)}"
             )
-
+        # 更新所有会话的状态
         for session in self.sessions:
             session.step(timestamp, executor)
-
+        # 清理已完成的会话
         self._remove_finished_sessions()
 
     @staticmethod
@@ -561,7 +716,7 @@ def parse_arguments() -> WorkloadConfig:
     parser.add_argument(
         "--data-file",
         type=str,
-        default="sharegpt.json"
+        default=""
     )
 
     parser.add_argument(
@@ -625,6 +780,8 @@ def parse_arguments() -> WorkloadConfig:
     parser.add_argument(
         "--init-user-id", type=int, default=0, help="The initial user id to start with"
     )
+
+    # 添加是否在请求头中启用用户ID的标志参数（可选，默认不启用）
     parser.add_argument(
         "--request-with-user-id",
         action="store_true",
@@ -672,6 +829,7 @@ def process_output(filename):
 def main():
     args = parse_process_summary()
     if args.process_summary:
+        # 如果指定了处理已有摘要文件，则直接处理并返回
         process_output(args.process_summary)
         return
 
@@ -680,16 +838,21 @@ def main():
         global logger
         logger = init_logger(__name__, log_level=logging.DEBUG)
 
+    # 根据测试轮数设置步骤间隔
     if args.num_rounds == 1:
-        step_interval = 0.1
+        step_interval = 0.01
     else:
-        step_interval = 0.1
+        step_interval = 0.01
 
+    # 创建请求执行器，用于向模型发送请求
     executor = RequestExecutor(
         base_url=args.base_url, api_key=args.api_key, model=args.model
     )
 
-    warmup_engine(executor)
+    # 预热引擎，确保模型服务在正式测试前已准备就绪
+    # warmup_engine(executor)
+
+    # 创建工作负载配置对象，包含所有测试参数
     workload_config = WorkloadConfig(
         num_users=args.num_users,
         system_prompt_len=args.shared_system_prompt,
@@ -698,22 +861,25 @@ def main():
         num_rounds=args.num_rounds,
         qps=args.qps,
         model=args.model,
-        enable_user_id=args.request_with_user_id,
+        enable_user_id=args.request_with_user_id, # 是否启用用户ID
     )
-
+    # 创建用户会话管理器，负责管理所有用户会话
     manager = UserSessionManager(
         workload_config, init_user_id=args.init_user_id, use_sharegpt=args.sharegpt
     )
-
+    # 初始化计数器和计时器
     num_steps = 0
     start_time = time.time()
     last_summary_time = start_time
     try:
         while True:
             num_steps += 1
+            # 执行一步测试，处理所有活跃用户的请求
             manager.step(time.time(), executor)
+            # 等待指定的步骤间隔
             time.sleep(step_interval)
 
+            # 定期生成性能摘要报告
             if time.time() - last_summary_time > args.log_interval:
                 manager.summary(last_summary_time, time.time())
                 last_summary_time = time.time()
@@ -724,8 +890,9 @@ def main():
     except KeyboardInterrupt:
         logger.info("Interrupted, waiting for the final result")
 
+    # 停止异步事件循环
     AsyncLoopWrapper.StopLoop()
-
+     # 输出最终的性能摘要并保存到文件
     logger.info(f"Finished benchmarking, dumping summary to {args.output}")
     summary = manager.summary(0, time.time())
     summary.to_csv(args.output, index=False)
