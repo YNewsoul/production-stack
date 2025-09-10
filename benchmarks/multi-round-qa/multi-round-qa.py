@@ -507,11 +507,11 @@ class UserSessionManager:
         # 计算系统预热时间
         self.ramp_up_time = workload_config.num_users * self.gap_between_users
 
-        logger.info(
-            f"Gap between users: {self.gap_between_users} secs.\n"
-            f"Gap between user reqs: {gap_between_requests_per_user} secs.\n"
-            f"Expected length of user session: {session_alive_time} secs."
-        )
+        # logger.info(
+        #     f"Gap between users: {self.gap_between_users} secs.\n"
+        #     f"Gap between user reqs: {gap_between_requests_per_user} secs.\n"
+        #     f"Expected length of user session: {session_alive_time} secs."
+        # )
 
         self.user_id = init_user_id
         self.last_user_join = 0
@@ -534,9 +534,9 @@ class UserSessionManager:
         self.sharegpt_data = [
             d
             for d in self.sharegpt_data
-            if d["num_round"] == 2 * self.workload_config.num_rounds
+            if d["num_round"] >= 2 * self.workload_config.num_rounds
         ]
-        logger.info(f"There are {len(self.sharegpt_data)} users satisfying ")
+        # logger.info(f"There are {len(self.sharegpt_data)} users satisfying ")
 
     def _ramp_up(self, timestamp: float, ramp_up_time: float):
         """
@@ -581,10 +581,11 @@ class UserSessionManager:
         # 找出所有已完成的会话
         sessions_to_remove = [s for s in self.sessions if s.finished]
         if len(sessions_to_remove) > 0:
-            logger.info(
-                f"Removing {len(sessions_to_remove)} finished sessions, now "
-                f"active users: {len(self.sessions) - len(sessions_to_remove)}"
-            )
+            pass
+            # logger.info(
+            #     f"Removing {len(sessions_to_remove)} finished sessions, now "
+            #     f"active users: {len(self.sessions) - len(sessions_to_remove)}"
+            # )
             # 收集已完成会话的统计信息
             for session in sessions_to_remove:
                 self.session_summaries.append(session.summary())
@@ -611,10 +612,10 @@ class UserSessionManager:
         if timestamp - self.last_user_join > self.gap_between_users:
             self._create_user_session()
             self.last_user_join = timestamp
-            logger.info(
-                f"Joined a new user {self.user_id}, "
-                f"now active users: {len(self.sessions)}"
-            )
+            # logger.info(
+            #     f"Joined a new user {self.user_id}, "
+            #     f"now active users: {len(self.sessions)}"
+            # )
         # 更新所有会话的状态
         for session in self.sessions:
             session.step(timestamp, executor)
@@ -666,7 +667,7 @@ class UserSessionManager:
             df["generation_tokens"] / df["generation_time"]
         ).mean()
         average_ttft = df["ttft"].mean()
-        logger.info("Calculating performance summary")
+        # logger.info("Calculating performance summary")
         print("\n")
         print("==================== Performance summary ======================")
         print(f"  \033[33mQPS: \033[32m{qps:.4f} reqs/s\033[0m\n")
@@ -721,7 +722,7 @@ class UserSessionManager:
 
 
 def warmup_engine(executor):
-    logger.info("Warming up the engine")
+    # logger.info("Warming up the engine")
     for i in range(10):
         chat_history = ChatHistory()
         chat_history.on_user_query(
@@ -915,7 +916,7 @@ def main():
     # 停止异步事件循环
     AsyncLoopWrapper.StopLoop()
      # 输出最终的性能摘要并保存到文件
-    logger.info(f"Finished benchmarking, dumping summary to {args.output}")
+    # logger.info(f"Finished benchmarking, dumping summary to {args.output}")
     summary = manager.summary(0, time.time())
     summary.to_csv(args.output, index=False)
 
