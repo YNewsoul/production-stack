@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from typing import Optional
 import os
 import openai
+import uuid
 import pandas as pd
 
 from utils import AsyncLoopWrapper, init_logger
@@ -162,6 +163,17 @@ class RequestExecutor:
         # 存储生成的完整文本
         words = ""
 
+        extra_body = {}
+        # 采样参数全部放到 extra_body
+        extra_body.update({
+            "min_p": 0.02,
+            "top_p": 1,
+            "top_k": -1,
+            "frequency_penalty": 0,
+            "presence_penalty": 0,
+            "repetition_penalty": 1,
+            "temperature": 0.8
+        })
         # 发送异步请求到OpenAI API，启用流式响应
         response = await self.client.chat.completions.create(
             messages=messages,
@@ -171,6 +183,7 @@ class RequestExecutor:
             max_tokens=max_tokens,
             stream_options={"include_usage": True}, # 包含token使用统计
             extra_headers=extra_headers,
+            extra_body=extra_body
         )
 
         # 处理流式响应
@@ -244,6 +257,8 @@ class UserSession:
         self.chat_history = ChatHistory()
         self.question_id = 0
         self.use_sharegpt = use_sharegpt
+        # 添加 conversation_id
+        self.conversation_id = str(uuid.uuid4())
         # 如果使用ShareGPT数据，初始化相关设置
         if self.use_sharegpt:
             self.sharegpt_data = sharegpt_data
@@ -256,6 +271,7 @@ class UserSession:
         self.has_unfinished_request = False
         # 上次记录未完成请求的时间
         self.last_unfinished_log = 0
+
 
         # 存储性能指标
         self.prompt_lengths = []
@@ -360,12 +376,18 @@ class UserSession:
         else:
             max_tokens = self.user_config.answer_len
 
+        extra_headers = {
+            "X-Flow-Conversation-Id": self.conversation_id,
+            "X-Request-Id": str(uuid.uuid4()) 
+        }
+        
         # 发送请求
         request_executor.launch_request(
             self.chat_history,
             max_tokens,
             self._on_request_finished,
-            extra_headers={"x-user-id": str(self.user_config.user_id)},
+            extra_headers=extra_headers
+            # extra_headers={"x-user-id": str(self.user_config.user_id)},
         )
         self.has_unfinished_request = True
         self.last_request_time = timestamp
@@ -512,7 +534,7 @@ class UserSessionManager:
         self.sharegpt_data = [
             d
             for d in self.sharegpt_data
-            if d["num_round"] >= 2 * self.workload_config.num_rounds
+            if d["num_round"] == 2 * self.workload_config.num_rounds
         ]
         logger.info(f"There are {len(self.sharegpt_data)} users satisfying ")
 
