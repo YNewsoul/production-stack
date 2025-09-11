@@ -15,6 +15,7 @@ from utils import AsyncLoopWrapper, init_logger
 logger = init_logger(__name__, logging.INFO)
 
 data_file = ""
+round_data = 0
 @dataclass
 class WorkloadConfig:
     # Max number of users in the system concurrently
@@ -514,7 +515,7 @@ class UserSessionManager:
         #     f"Gap between user reqs: {gap_between_requests_per_user} secs.\n"
         #     f"Expected length of user session: {session_alive_time} secs."
         # )
-
+        self.init_user_id = init_user_id
         self.user_id = init_user_id
         self.last_user_join = 0
         self.session_summaries = []
@@ -568,8 +569,9 @@ class UserSessionManager:
         user_config = UserConfig.new_user_config(self.user_id, self.workload_config)
         # 根据是否使用ShareGPT数据集创建不同的用户会话
         if self.use_sharegpt:
+            sharegpt_data_id = (self.user_id - self.init_user_id)%round_data + self.init_user_id
             user_session = UserSession(
-                user_config, self.use_sharegpt, self.sharegpt_data[self.user_id]
+                user_config, self.use_sharegpt, self.sharegpt_data[sharegpt_data_id]
             )
         else:
             user_session = UserSession(user_config, self.use_sharegpt)
@@ -825,9 +827,13 @@ def parse_arguments() -> WorkloadConfig:
     parser.add_argument(
         "--sharegpt", action="store_true", help="Whether to use sharegpt dataset"
     )
+    parser.add_argument(
+        "--round-data",type=int
+    )
 
     args = parser.parse_args()
-    global data_file
+    global data_file,round_data
+    round_data = args.round_data
     data_file = args.data_file
     return args
 
