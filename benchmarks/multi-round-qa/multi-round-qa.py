@@ -361,17 +361,23 @@ class UserSession:
         if self.use_sharegpt:
             if self.start_with_gpt:
                 try:
-                    max_tokens = self.sharegpt_data["conversations"][2 * self.question_id][
-                        "num_tokens"
-                    ]
+                    if data_file == "reasoning.json":
+                        max_tokens = self.user_config.answer_len
+                    else:
+                        max_tokens = self.sharegpt_data["conversations"][2 * self.question_id][
+                            "num_tokens"
+                        ]
                 except:
                     print("使用传入参数 num_tokens")
                     max_tokens = self.user_config.answer_len
             else:
                 try:
-                    max_tokens = self.sharegpt_data["conversations"][
-                        2 * self.question_id - 1
-                    ]["num_tokens"]
+                    if data_file == "reasoning.json":
+                        max_tokens = self.user_config.answer_len
+                    else :
+                        max_tokens = self.sharegpt_data["conversations"][
+                            2 * self.question_id - 1
+                        ]["num_tokens"]
                 except:
                     print("使用传入参数 num_tokens")
                     max_tokens = self.user_config.answer_len

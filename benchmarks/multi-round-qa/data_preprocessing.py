@@ -30,6 +30,9 @@ elif args.dataset == "coder":
 elif args.dataset == "arxiv":
     with open("arxiv_preprocess_data.json", "r", encoding="utf-8") as file:
         data = json.load(file)
+elif args.dataset == "reasoning":
+    with open("reasoning_preprocess_data.json", "r", encoding="utf-8") as file:
+        data = json.load(file)
 
 def estimate_num_tokens(text: str) -> int:
     if not hasattr(estimate_num_tokens, "tokenizer"):
@@ -83,4 +86,7 @@ elif args.dataset == "coder":
         json.dump(data, file, ensure_ascii=False, indent=2)
 elif args.dataset == "arxiv":
     with open("arxiv.json", "w", encoding="utf-8") as file:
+        json.dump(data, file, ensure_ascii=False, indent=2)
+elif args.dataset == "reasoning":
+    with open("reasoning.json", "w", encoding="utf-8") as file:
         json.dump(data, file, ensure_ascii=False, indent=2)

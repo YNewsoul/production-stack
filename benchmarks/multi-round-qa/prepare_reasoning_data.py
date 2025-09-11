@@ -32,7 +32,7 @@ out_put = 0
 for item in dataset:
     token_num += estimate_num_tokens(item["question"])
     out_put += estimate_num_tokens(item["solution"])
-    if estimate_num_tokens(item["question"]) < 500 :
+    if estimate_num_tokens(item["question"]) > 500 :
         converted_item = {
             "id": id,
             "conversations": [{"from":"human","value":item["question"]},{"from":"gpt","value":item["solution"]}]
