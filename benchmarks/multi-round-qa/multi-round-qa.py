@@ -353,9 +353,9 @@ class UserSession:
 
         # 将用户查询添加到聊天历史
         self.chat_history.on_user_query(prompt)
-        logger.debug(
-            f"User {self.user_config.user_id} issues request {self.question_id}"
-        )
+        # logger.debug(
+        #     f"User {self.user_config.user_id} issues request {self.question_id}"
+        # )
         # 确定生成响应的最大token数量
         if self.use_sharegpt:
             if self.start_with_gpt:
@@ -371,6 +371,7 @@ class UserSession:
                         2 * self.question_id - 1
                     ]["num_tokens"]
                 except:
+                    print("使用传入tokens长度")
                     max_tokens = self.user_config.answer_len
             max_tokens = min(max_tokens, self.user_config.answer_len)
         else:
@@ -397,11 +398,11 @@ class UserSession:
         # 将系统响应添加到聊天历史
         self.chat_history.on_system_response(response.body)
         self.has_unfinished_request = False
-        logger.debug(
-            f"User {self.user_config.user_id} finished one request. "
-            f"Prompt tokens: {response.prompt_tokens}, "
-            f"generation tokens: {response.generation_tokens}"
-        )
+        # logger.debug(
+        #     f"User {self.user_config.user_id} finished one request. "
+        #     f"Prompt tokens: {response.prompt_tokens}, "
+        #     f"generation tokens: {response.generation_tokens}"
+        # )
         # 更新请求结果统计
         self._update_result(response)
 
@@ -425,11 +426,11 @@ class UserSession:
         # 设置会话的内部状态
         self.last_request_time = timestamp - offset + passed_time
         self.question_id = num_passed_questions
-        logger.debug(
-            f"Set internal state for user {self.user_config.user_id}, "
-            f"question_id: {self.question_id}, "
-            f"last_request_time: {self.last_request_time}"
-        )
+        # logger.debug(
+        #     f"Set internal state for user {self.user_config.user_id}, "
+        #     f"question_id: {self.question_id}, "
+        #     f"last_request_time: {self.last_request_time}"
+        # )
 
     def step(self, timestamp: float, request_executor: RequestExecutor):
         """
@@ -581,7 +582,7 @@ class UserSessionManager:
         # 找出所有已完成的会话
         sessions_to_remove = [s for s in self.sessions if s.finished]
         if len(sessions_to_remove) > 0:
-            pass
+            mark = 0
             # logger.info(
             #     f"Removing {len(sessions_to_remove)} finished sessions, now "
             #     f"active users: {len(self.sessions) - len(sessions_to_remove)}"
@@ -638,11 +639,11 @@ class UserSessionManager:
         else:
             launched_queries = len(df)
 
-        logger.debug(
-            f"Launched queries: {launched_queries}, "
-            f"pending queries: {pending_queries}, "
-            f"finished queries: {len(df)}"
-        )
+        # logger.debug(
+        #     f"Launched queries: {launched_queries}, "
+        #     f"pending queries: {pending_queries}, "
+        #     f"finished queries: {len(df)}"
+        # )
 
         if qps is None:
             qps = 0.0
@@ -842,10 +843,10 @@ def parse_process_summary():
 
 
 def process_output(filename):
-    logger.warning(
-        f"Processing the existing summary file {filename}"
-        ", ignoring all the other arguments"
-    )
+    # logger.warning(
+    #     f"Processing the existing summary file {filename}"
+    #     ", ignoring all the other arguments"
+    # )
     UserSessionManager.ProcessSummary(pd.read_csv(filename), pending_queries=0)
 
 
