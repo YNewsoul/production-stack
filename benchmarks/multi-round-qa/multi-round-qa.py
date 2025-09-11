@@ -364,6 +364,7 @@ class UserSession:
                         "num_tokens"
                     ]
                 except:
+                    print("使用传入参数 num_tokens")
                     max_tokens = self.user_config.answer_len
             else:
                 try:
@@ -371,6 +372,7 @@ class UserSession:
                         2 * self.question_id - 1
                     ]["num_tokens"]
                 except:
+                    print("使用传入参数 num_tokens")
                     max_tokens = self.user_config.answer_len
             max_tokens = min(max_tokens, self.user_config.answer_len)
         else:

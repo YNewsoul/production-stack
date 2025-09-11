@@ -27,6 +27,9 @@ if args.dataset == "sharegpt":
 elif args.dataset == "coder":
     with open("coder_preprocess_data.json", "r", encoding="utf-8") as file:
         data = json.load(file)
+elif args.dataset == "arxiv":
+    with open("arxiv_preprocess_data.json", "r", encoding="utf-8") as file:
+        data = json.load(file)
 
 def estimate_num_tokens(text: str) -> int:
     if not hasattr(estimate_num_tokens, "tokenizer"):
@@ -77,4 +80,7 @@ if args.dataset == "sharegpt":
         json.dump(data, file, ensure_ascii=False, indent=2)
 elif args.dataset == "coder":
     with open("coder.json", "w", encoding="utf-8") as file:
+        json.dump(data, file, ensure_ascii=False, indent=2)
+elif args.dataset == "arxiv":
+    with open("arxiv.json", "w", encoding="utf-8") as file:
         json.dump(data, file, ensure_ascii=False, indent=2)
