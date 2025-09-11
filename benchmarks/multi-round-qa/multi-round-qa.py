@@ -371,7 +371,6 @@ class UserSession:
                         2 * self.question_id - 1
                     ]["num_tokens"]
                 except:
-                    print("使用传入tokens长度")
                     max_tokens = self.user_config.answer_len
             max_tokens = min(max_tokens, self.user_config.answer_len)
         else:
@@ -669,39 +668,39 @@ class UserSessionManager:
         ).mean()
         average_ttft = df["ttft"].mean()
         # logger.info("Calculating performance summary")
-        print("\n")
-        print("==================== Performance summary ======================")
-        print(f"  \033[33mQPS: \033[32m{qps:.4f} reqs/s\033[0m\n")
+        # print("\n")
+        # print("==================== Performance summary ======================")
+        # print(f"  \033[33mQPS: \033[32m{qps:.4f} reqs/s\033[0m\n")
 
-        print(
-            f"  \033[33mProcessing speed: "
-            f"\033[32m{finished_qps:.4f} reqs/s\033[0m\n"
-        )
+        # print(
+        #     f"  \033[33mProcessing speed: "
+        #     f"\033[32m{finished_qps:.4f} reqs/s\033[0m\n"
+        # )
 
-        print(f"  \033[33mRequests on-the-fly: {pending_queries}\033[0m\n")
+        # print(f"  \033[33mRequests on-the-fly: {pending_queries}\033[0m\n")
 
-        print(
-            "  \033[33mInput tokens per second: "
-            f"\033[32m{average_prefill_speed:.4f} tokens/s\033[0m\n"
-        )
+        # print(
+        #     "  \033[33mInput tokens per second: "
+        #     f"\033[32m{average_prefill_speed:.4f} tokens/s\033[0m\n"
+        # )
 
-        print(
-            "  \033[33mOutput tokens per second: "
-            f"\033[32m{average_generation_speed:.4f} tokens/s\033[0m\n"
-        )
+        # print(
+        #     "  \033[33mOutput tokens per second: "
+        #     f"\033[32m{average_generation_speed:.4f} tokens/s\033[0m\n"
+        # )
 
-        print(
-            "  \033[33mAverage generation throughput (per request): "
-            f"\033[32m{average_generation_speed_per_request:.4f} "
-            "tokens/req/s\033[0m\n"
-        )
+        # print(
+        #     "  \033[33mAverage generation throughput (per request): "
+        #     f"\033[32m{average_generation_speed_per_request:.4f} "
+        #     "tokens/req/s\033[0m\n"
+        # )
 
-        print(f"  \033[33mAverage TTFT: \033[32m{average_ttft:.4f}s\033[0m\n")
+        # print(f"  \033[33mAverage TTFT: \033[32m{average_ttft:.4f}s\033[0m\n")
 
-        print(f"Time range: {start_time} - {end_time} ({total_time:.2f}s)")
+        # print(f"Time range: {start_time} - {end_time} ({total_time:.2f}s)")
 
-        print("===============================================================")
-        print("\n")
+        # print("===============================================================")
+        # print("\n")
         return df
 
     def summary(self, start_time: float, end_time: float) -> pd.DataFrame:
