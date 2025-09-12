@@ -543,8 +543,9 @@ class UserSessionManager:
         self.sharegpt_data = [
             d
             for d in self.sharegpt_data
-            if d["num_round"] >= 2 * self.workload_config.num_rounds
+            if d["num_round"] >= 2 * self.workload_config.num_rounds and d["num_round"] <= 2 * self.workload_config.num_rounds and d["num_round"] + 2
         ]
+        print(f"sharegpt_data length:{len(self.sharegpt_data)}")
         # logger.info(f"There are {len(self.sharegpt_data)} users satisfying ")
 
     def _ramp_up(self, timestamp: float, ramp_up_time: float):
