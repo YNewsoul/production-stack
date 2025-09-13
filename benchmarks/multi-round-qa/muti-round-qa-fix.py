@@ -459,10 +459,11 @@ class UserSession:
         # 如果是第一次请求，立即发送
         if self.last_request_time is None:
             self._launch_new_request(timestamp, request_executor)
-            return
+            return True
 
         # 检查是否可以发送下一个请求
         if timestamp - self.last_request_time > self.user_config.gap_between_requests:
+            # print(f"gap_between_requests:{self.user_config.gap_between_requests}")
             # 如果有未完成的请求，记录日志并等待
             if self.has_unfinished_request:
                 if timestamp - self.last_unfinished_log > 10:
@@ -474,7 +475,7 @@ class UserSession:
                 return
             # 发送下一个请求
             self._launch_new_request(timestamp, request_executor)
-            return
+            return True
 
     def summary(self) -> pd.DataFrame:
         df = pd.DataFrame()
@@ -543,9 +544,9 @@ class UserSessionManager:
         self.sharegpt_data = [
             d
             for d in self.sharegpt_data
-            if d["num_round"] >= 2 * self.workload_config.num_rounds
+            if d["num_round"] >= 2 * self.workload_config.num_rounds and  d["num_round"]%2==0
         ]
-        print(f"sharegpt_data length:{len(self.sharegpt_data)}")
+        print(f"总请求个数:{len(self.sharegpt_data)}")
         # logger.info(f"There are {len(self.sharegpt_data)} users satisfying ")
 
     def _ramp_up(self, timestamp: float, ramp_up_time: float):
@@ -611,25 +612,28 @@ class UserSessionManager:
             timestamp: 当前时间戳
             executor: 请求执行器，用于发送API请求
         """
-        # 处理系统预热
-        if self.need_ramp_up:
-            self._ramp_up(timestamp, self.ramp_up_time)
+        # # 处理系统预热
+        # if self.need_ramp_up:
+        #     self._ramp_up(timestamp, self.ramp_up_time)
 
         # 设置开始时间
         if self.start_time is None:
             self.start_time = timestamp
 
+        self._create_user_session()
         # 检查是否需要添加新用户
-        if timestamp - self.last_user_join > self.gap_between_users:
-            self._create_user_session()
-            self.last_user_join = timestamp
+        # if timestamp - self.last_user_join > self.gap_between_users:
+        #     self._create_user_session()
+        #     self.last_user_join = timestamp
             # logger.info(
             #     f"Joined a new user {self.user_id}, "
             #     f"now active users: {len(self.sessions)}"
             # )
         # 更新所有会话的状态
         for session in self.sessions:
-            session.step(timestamp, executor)
+            mark = session.step(timestamp, executor)
+            if mark:
+                break
         # 清理已完成的会话
         self._remove_finished_sessions()
 
@@ -878,9 +882,9 @@ def main():
 
     # 根据测试轮数设置步骤间隔
     if args.num_rounds == 1:
-        step_interval = 0.01
+        step_interval = 1 / args.qps
     else:
-        step_interval = 0.01
+        step_interval = 1 / args.qps
 
     # 创建请求执行器，用于向模型发送请求
     executor = RequestExecutor(
