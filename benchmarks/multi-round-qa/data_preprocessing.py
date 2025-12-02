@@ -16,7 +16,7 @@ parser.add_argument(
 parser.add_argument(
     "--dataset",
     type=str,
-    default="sharegpt",
+    required=True,
     help="The dataset to process. Default is sharegpt.",
 )
 args = parser.parse_args()
@@ -32,6 +32,9 @@ elif args.dataset == "arxiv":
         data = json.load(file)
 elif args.dataset == "reasoning":
     with open("reasoning_preprocess_data.json", "r", encoding="utf-8") as file:
+        data = json.load(file)
+elif args.dataset == "mixed":
+    with open("mixed_arxiv_coder_preprocess_data.json", "r", encoding="utf-8") as file:
         data = json.load(file)
 
 def estimate_num_tokens(text: str) -> int:
@@ -89,4 +92,7 @@ elif args.dataset == "arxiv":
         json.dump(data, file, ensure_ascii=False, indent=2)
 elif args.dataset == "reasoning":
     with open("reasoning.json", "w", encoding="utf-8") as file:
+        json.dump(data, file, ensure_ascii=False, indent=2)
+elif args.dataset == "mixed":
+    with open("mixed.json", "w", encoding="utf-8") as file:
         json.dump(data, file, ensure_ascii=False, indent=2)

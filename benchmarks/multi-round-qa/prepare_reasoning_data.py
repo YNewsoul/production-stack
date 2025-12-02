@@ -1,8 +1,7 @@
-from datasets import load_dataset
 import json
 import os
-from transformers import AutoTokenizer
 
+from transformers import AutoTokenizer
 from datasets import load_dataset, concatenate_datasets
 
 def estimate_num_tokens(text: str) -> int:
