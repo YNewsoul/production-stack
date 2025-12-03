@@ -20,7 +20,6 @@ logger = init_logger(__name__, logging.INFO)
 
 @dataclass
 class WorkloadConfig:
-    num_users: int
     answer_len: int
     num_rounds: int
     qps: int
@@ -33,7 +32,6 @@ class WorkloadConfig:
 class UserConfig:
     user_id: int
     answer_len: int
-    gap_between_requests: int
     num_rounds: int
     use_predict: bool
     dataset: str
@@ -43,7 +41,6 @@ class UserConfig:
         return UserConfig(
             user_id=user_id,
             answer_len=workload_config.answer_len,
-            gap_between_requests=workload_config.num_users / workload_config.qps,
             num_rounds=workload_config.num_rounds,
             use_predict=workload_config.use_predict,
             dataset=workload_config.dataset,
@@ -55,35 +52,22 @@ class ChatHistory:
 
     def on_user_query(self, query: str, num_tokens: Optional[int] = None):
         """添加用户查询到聊天历史中"""
-        if len(self.history) == 0:
-            self.history.append({"role": "user", "content": query, "tokens": num_tokens})
-        else:
-            assert self.history[-1]["role"] == "assistant", "Expect system response"
-            self.history.append({"role": "user", "content": query, "tokens": num_tokens})
+        self.history.append({"role": "user", "content": query, "tokens": num_tokens})
 
     def on_system_response(self, response: str, num_tokens: Optional[int] = None):
         """添加系统响应到聊天历史中"""
-        assert len(self.history) > 0, "Expect user query"
-        assert self.history[-1]["role"] == "user", "Expect user query"
         self.history.append({"role": "assistant", "content": response, "tokens": num_tokens})
 
     def get_messages_for_openai(self):
         """获取符合OpenAI API要求格式的消息列表,list: 包含所有历史消息的列表，每条消息包含role和content字段"""
-        # 仅返回 role 和 content
         return [{"role": item["role"], "content": item["content"]} for item in self.history]
 
     def estimate_prompt_tokens(self) -> int:
-        """估算当前请求的提示 tokens 数，优先使用已有统计数据"""
+        """获取当前请求的提示 tokens 数"""
         total = 0
         for item in self.history:
-            if item.get("tokens") is not None:
-                total += item["tokens"]
-            else:
-                total += max(1, len(item["content"]) // 4)
+            total += item["tokens"]
         return total
-
-    def __len__(self):
-        return len(self.history)
 
 @dataclass
 class Response:
@@ -92,8 +76,8 @@ class Response:
     generation_time: float
     prompt_tokens: int
     generation_tokens: int
-    launch_time: float
-    finish_time: float
+    send_time: float
+    end_time: float
     max_tokens: int
     predict_tokens:int
     ttft_slo:float
@@ -126,7 +110,6 @@ class RequestExecutor:
                 "arrival_time":time.monotonic(),},
         })
         
-
         # 发送异步请求到OpenAI API，启用流式响应
         response = await self.client.chat.completions.create(
             messages=request_data["messages"],
@@ -160,8 +143,8 @@ class RequestExecutor:
             generation_time=time.time() - first_token_time,     # 整体生成时间
             prompt_tokens=tokens_prefill,                       # 提示的token数量
             generation_tokens=tokens_out,                       # 生成的token数量
-            launch_time=start_time,                             # 请求开始时间
-            finish_time=time.time(),                            # 请求完成时间
+            send_time=start_time,                             # 请求开始时间
+            end_time=time.time(),                            # 请求完成时间
             predict_tokens=request_data["predict_tokens"],
             max_tokens=request_data["max_tokens"],
             ttft_slo=request_data["ttft_slo"],
@@ -194,33 +177,22 @@ class UserSession:
         self.prompt_lengths = []
         self.generation_lengths = []
         self.ttfts = []
+        self.tpots = []
         self.generation_times = []
-        self.launch_times = []
-        self.finish_times = []
-        self.total_times = []
+        self.send_times = []
+        self.end_times = []
+        self.latencys = []
         self.ttft_slos = []
         self.ttft_slo_comforms = []
+        self.tpot_slo_comforms = []
         self.max_generation_lengths = []
         self.predict_generation_lengths = []
 
         self.finished = False
 
         self.ttft_slo_dict = {
-                    1000:2.5,
-                    2000:3.5,
-                    4000:5.5,
-                    6000:7.5,
-                    8000:9.5,
-                    10000:11.5,
-                    12000:14,
-                    14000:16.5,
-                    16000:19,
-                    18000:21.5,
-                    20000:24,
-                    22000:26.5,
-                    24000:29.5,
-                    26000:32.5,
-                    28000:36}
+                1000:2.5, 2000:3.5, 4000:5.5, 6000:7.5, 8000:9.5, 10000:11.5, 12000:14, 14000:16.5, 16000:19,
+                18000:21.5, 20000:24, 22000:26.5, 24000:29.5, 26000:32.5, 28000:36}
         self.sorted_keys = [1000,2000,4000,6000,8000,10000,12000, 14000,16000, 18000,20000,22000,24000,26000,28000]
 
     def _update_result(self, response: Response):
@@ -230,13 +202,14 @@ class UserSession:
         self.predict_generation_lengths.append(response.predict_tokens)
         self.max_generation_lengths.append(response.max_tokens)
         self.ttfts.append(response.ttft)
+        self.tpots.append((response.generation_time)*1000/response.generation_tokens)
         self.generation_times.append(response.generation_time)
-        self.launch_times.append(response.launch_time)
-        self.finish_times.append(response.finish_time)
-        total_time = response.finish_time-response.launch_time
-        self.total_times.append(total_time)
+        self.send_times.append(response.send_time)
+        self.end_times.append(response.end_time)
+        self.latencys.append(response.end_time - response.send_time)
         self.ttft_slos.append(response.ttft_slo)
-        self.ttft_slo_comforms.append(True if total_time < self.ttft_slos[-1] else False)
+        self.ttft_slo_comforms.append(True if response.ttft <= response.ttft_slo else False)
+        self.tpot_slo_comforms.append(True if self.tpots[-1] <= 50 else False)
 
     def _select_ttft_slo(self, prompt_tokens: int) -> int:
         """根据提示 tokens 的分段选择对应的 ttft_slo"""
@@ -254,6 +227,7 @@ class UserSession:
             max_tokens = self.user_config.answer_len
         else :
             max_tokens = self.sharegpt_data["conversations"][2 * self.question_id + 1]["num_tokens"]
+        # 做个约束
         max_tokens = min(max_tokens, self.user_config.answer_len)
         self.question_id += 1
 
@@ -308,11 +282,10 @@ class UserSession:
             self._launch_new_request(predictor,timestamp, request_executor)
             return True
 
-        # 检查是否可以发送下一个请求
-        if timestamp - self.last_request_time > self.user_config.gap_between_requests:
-            # 如果有未完成的请求，记录日志并等待
-            if self.has_unfinished_request:
-                return
+        # 如果有未完成的请求，记录日志并等待
+        if self.has_unfinished_request:
+            return
+        else:
             self._launch_new_request(predictor,timestamp, request_executor)
             return True
 
@@ -326,11 +299,11 @@ class UserSession:
         df["generation_time"] = self.generation_times
         df["user_id"] = self.user_config.user_id
         df["question_id"] = range(1, len(self.prompt_lengths) + 1)
-        df["launch_time"] = self.launch_times
-        df["finish_time"] = self.finish_times
-        df["total_time"] = self.total_times
+        df["send_time"] = self.send_times
+        df["end_time"] = self.end_times
         df["ttft_slo"] = self.ttft_slos
         df["ttft_slo_comform"] = self.ttft_slo_comforms
+        df["tpot_slo_comform"] = self.tpot_slo_comforms
         
         return df
 
@@ -342,13 +315,6 @@ class UserSessionManager:
     ):
         self.workload_config = workload_config
         self.sessions = []
-
-         # 计算每个用户的请求之间的间隔时间
-        gap_between_requests_per_user = workload_config.num_users / workload_config.qps
-        if workload_config.num_rounds == 1:
-            session_alive_time = gap_between_requests_per_user
-        else:
-            session_alive_time = gap_between_requests_per_user * (workload_config.num_rounds - 1)
 
         self.init_user_id = init_user_id
         self.user_id = init_user_id
@@ -417,8 +383,8 @@ class UserSessionManager:
         qps: Optional[int] = None,
     ):
         if start_time and end_time:
-            launched_queries = len(df.query(f"{start_time} <= launch_time <= {end_time}"))
-            df = df.query(f"{start_time} <= finish_time <= {end_time}")
+            launched_queries = len(df.query(f"{start_time} <= send_time <= {end_time}"))
+            df = df.query(f"{start_time} <= end_time <= {end_time}")
         else:
             launched_queries = len(df)
 
@@ -426,9 +392,9 @@ class UserSessionManager:
             qps = 0.0
 
         if start_time is None:
-            start_time = df["launch_time"].min()
+            start_time = df["send_time"].min()
         if end_time is None:
-            end_time = df["finish_time"].max()
+            end_time = df["end_time"].max()
         total_time = end_time - start_time
 
         total_requests = launched_queries + pending_queries
@@ -489,7 +455,7 @@ class UserSessionManager:
         )
         pending_queries = len([s for s in self.sessions if s.has_unfinished_request])
         start_time = max(self.start_time, start_time)
-        end_time = min(end_time, df["finish_time"].max())
+        end_time = min(end_time, df["end_time"].max())
         qps = self.workload_config.qps
 
         df = UserSessionManager.ProcessSummary(
@@ -500,7 +466,6 @@ class UserSessionManager:
 def parse_arguments():
     parser = argparse.ArgumentParser(description="Parse benchmark configurations.")
     parser.add_argument("--dataset",type=str,default="")
-    parser.add_argument("--num-users",type=int,required=True,)
     parser.add_argument("--answer-len",type=int,required=True)
     parser.add_argument("--num-rounds",type=int,required=True)
     parser.add_argument("--qps", type=float, required=True, help="Overall QPS")
@@ -532,11 +497,12 @@ def main():
     executor = RequestExecutor(base_url=args.base_url, api_key=args.api_key, model=args.model)
 
     # 初始化输出长度预测器
-    predictor = Predictor()
+    predictor = None
+    if args.use_predict:
+        predictor = Predictor()
 
     # 创建工作负载配置对象，包含所有测试参数
     workload_config = WorkloadConfig(
-        num_users=args.num_users,
         answer_len=args.answer_len,
         num_rounds=args.num_rounds,
         qps=args.qps,

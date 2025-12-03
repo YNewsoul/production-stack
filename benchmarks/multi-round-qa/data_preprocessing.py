@@ -36,6 +36,9 @@ elif args.dataset == "reasoning":
 elif args.dataset == "mixed":
     with open("mixed_arxiv_coder_preprocess_data.json", "r", encoding="utf-8") as file:
         data = json.load(file)
+elif args.dataset == "mixed_test":
+    with open("mixed_arxiv_coder_preprocess_test_data.json", "r", encoding="utf-8") as file:
+        data = json.load(file)
 
 def estimate_num_tokens(text: str) -> int:
     if not hasattr(estimate_num_tokens, "tokenizer"):
@@ -56,27 +59,30 @@ for d in data:
     human_tokens = []
     gpt_tokens = []
     for conv in d["conversations"]:
+        token_number = estimate_num_tokens(conv["value"])
+        conv["num_tokens"] = token_number
         if conv["from"] == "human":
-            human_tokens.append(estimate_num_tokens(conv["value"]))
+            human_tokens.append(token_number)
         if conv["from"] == "gpt":
-            token_number = estimate_num_tokens(conv["value"])
-            conv["num_tokens"] = token_number
             gpt_tokens.append(token_number)
-    if len(human_tokens) == 0:
-        d["average_human_token"] = 0
-        d["max_human_token"] = 0
-    else:
-        d["average_human_token"] = float(np.mean(human_tokens))
-        d["max_human_token"] = float(np.max(human_tokens))
-    if len(gpt_tokens) == 0:
-        d["average_gpt_token"] = 0
-        d["max_gpt_token"] = 0
-    else:
-        d["average_gpt_token"] = float(np.mean(gpt_tokens))
-        d["max_gpt_token"] = float(np.max(gpt_tokens))
+            
+    # 这几行注释掉，没用
+    # if len(human_tokens) == 0:
+    #     d["average_human_token"] = 0
+    #     d["max_human_token"] = 0
+    # else:
+    #     d["average_human_token"] = float(np.mean(human_tokens))
+    #     d["max_human_token"] = float(np.max(human_tokens))
+    # if len(gpt_tokens) == 0:
+    #     d["average_gpt_token"] = 0
+    #     d["max_gpt_token"] = 0
+    # else:
+    #     d["average_gpt_token"] = float(np.mean(gpt_tokens))
+    #     d["max_gpt_token"] = float(np.max(gpt_tokens))
 
     count += 1
-    print(f"Finished {count}")
+    if count % 10 == 0:
+        print(f"Finished {count}")
 
 # Remove the data that has two consecutive human rounds
 del data[260]
@@ -95,4 +101,7 @@ elif args.dataset == "reasoning":
         json.dump(data, file, ensure_ascii=False, indent=2)
 elif args.dataset == "mixed":
     with open("mixed.json", "w", encoding="utf-8") as file:
+        json.dump(data, file, ensure_ascii=False, indent=2)
+elif args.dataset == "mixed_test":
+    with open("mixed_test.json", "w", encoding="utf-8") as file:
         json.dump(data, file, ensure_ascii=False, indent=2)
