@@ -104,7 +104,7 @@ class RequestExecutor:
             "frequency_penalty": 0,
             "presence_penalty": 0,
             "repetition_penalty": 1,
-            "temperature": 0.8,
+            "temperature": 0,
             "extra_data":{
                 "ttft_slo":request_data["ttft_slo"],
                 "arrival_time":time.monotonic(),},
@@ -190,9 +190,14 @@ class UserSession:
 
         self.finished = False
 
+        # a6000 tp2 设置
+        # self.ttft_slo_dict = {
+        #         1000:2.5, 2000:3.5, 4000:5.5, 6000:7.5, 8000:9.5, 10000:11.5, 12000:14, 14000:16.5, 16000:19,
+        #         18000:21.5, 20000:24, 22000:26.5, 24000:29.5, 26000:32.5, 28000:36}
+        # 3090 tp2 设置
         self.ttft_slo_dict = {
-                1000:2.5, 2000:3.5, 4000:5.5, 6000:7.5, 8000:9.5, 10000:11.5, 12000:14, 14000:16.5, 16000:19,
-                18000:21.5, 20000:24, 22000:26.5, 24000:29.5, 26000:32.5, 28000:36}
+                1000:5, 2000:7.5, 4000:12, 6000:17, 8000:22, 10000:27, 12000:32, 14000:38, 16000:44,
+                18000:49, 20000:56, 22000:62, 24000:69, 26000:75, 28000:82}
         self.sorted_keys = [1000,2000,4000,6000,8000,10000,12000, 14000,16000, 18000,20000,22000,24000,26000,28000]
 
     def _update_result(self, response: Response):
@@ -289,7 +294,7 @@ class UserSession:
             self._launch_new_request(predictor,timestamp, request_executor)
             return True
 
-    def summary(self) -> pd.DataFrame:
+    def session_summary(self) -> pd.DataFrame:
         df = pd.DataFrame()
         df["prompt_tokens"] = self.prompt_lengths
         df["generation_tokens"] = self.generation_lengths
@@ -349,11 +354,9 @@ class UserSessionManager:
         """移除已完成的会话，收集其统计信息"""
         # 找出所有已完成的会话
         sessions_to_remove = [s for s in self.sessions if s.finished]
-        if len(sessions_to_remove) > 0:
-            mark = 0
-            # 收集已完成会话的统计信息
-            for session in sessions_to_remove:
-                self.session_summaries.append(session.summary())
+        # 收集已完成会话的统计信息
+        for session in sessions_to_remove:
+            self.session_summaries.append(session.session_summary())
         # 更新会话列表，只保留未完成的会话
         self.sessions = [s for s in self.sessions if not s.finished]
 
@@ -382,23 +385,13 @@ class UserSessionManager:
         pending_queries: int = 0,
         qps: Optional[int] = None,
     ):
-        if start_time and end_time:
-            launched_queries = len(df.query(f"{start_time} <= send_time <= {end_time}"))
-            df = df.query(f"{start_time} <= end_time <= {end_time}")
-        else:
-            launched_queries = len(df)
+        launched_queries = len(df.query(f"{start_time} <= send_time <= {end_time}"))
+        df = df.query(f"{start_time} <= end_time <= {end_time}")
 
-        if qps is None:
-            qps = 0.0
-
-        if start_time is None:
-            start_time = df["send_time"].min()
-        if end_time is None:
-            end_time = df["end_time"].max()
         total_time = end_time - start_time
 
         total_requests = launched_queries + pending_queries
-        _qps = total_requests / total_time
+        qps = total_requests / total_time
 
         total_finished_requests = len(df)
         finished_qps = total_finished_requests / total_time
@@ -407,20 +400,15 @@ class UserSessionManager:
         total_generation_tokens = df["generation_tokens"].sum()
         average_prefill_speed = total_prompt_tokens / total_time
         average_generation_speed = total_generation_tokens / total_time
-        average_generation_speed_per_request = (
-            df["generation_tokens"] / df["generation_time"]
-        ).mean()
+        average_generation_speed_per_request = (df["generation_tokens"] / df["generation_time"]).mean()
         average_ttft = df["ttft"].mean()
         print("\n")
-        print("==================== Performance summary ======================")
         print(f"  \033[33mQPS: \033[32m{qps:.4f} reqs/s\033[0m\n")
 
         print(
             f"  \033[33mProcessing speed: "
             f"\033[32m{finished_qps:.4f} reqs/s\033[0m\n"
         )
-
-        print(f"  \033[33mRequests on-the-fly: {pending_queries}\033[0m\n")
 
         print(
             "  \033[33mInput tokens per second: "
@@ -451,11 +439,9 @@ class UserSessionManager:
             return pd.DataFrame()
 
         df = pd.concat(
-            [s for s in self.session_summaries] + [s.summary() for s in self.sessions]
+            [s for s in self.session_summaries] + [s.session_summary() for s in self.sessions]
         )
         pending_queries = len([s for s in self.sessions if s.has_unfinished_request])
-        start_time = max(self.start_time, start_time)
-        end_time = min(end_time, df["end_time"].max())
         qps = self.workload_config.qps
 
         df = UserSessionManager.ProcessSummary(
@@ -477,7 +463,7 @@ def parse_arguments():
     parser.add_argument("--init-user-id", type=int, default=0)
     parser.add_argument("--cv",type=float,default=0.0)
     parser.add_argument("--use-predict",type=bool,default=False)
-    parser.add_argument("--log-interval",type=int,default=30)
+    parser.add_argument("--log-interval",type=int,default=60)
     parser.add_argument("--round-data",type=int)
 
     return parser.parse_args()
@@ -532,7 +518,8 @@ def main():
         time.sleep(interval)
 
         if time.time() - last_summary_time > args.log_interval:
-            manager.summary(last_summary_time, time.time())
+            summary = manager.summary(last_summary_time, time.time())
+            summary.to_csv(args.output, index=False,model='a')
             last_summary_time = time.time()
 
         if args.time is not None and time.time() - start_time > args.time:
@@ -540,9 +527,6 @@ def main():
 
     # 停止异步事件循环
     AsyncLoopWrapper.StopLoop()
-
-    summary = manager.summary(0, time.time())
-    summary.to_csv(args.output, index=False)
 
 if __name__ == "__main__":
     main()

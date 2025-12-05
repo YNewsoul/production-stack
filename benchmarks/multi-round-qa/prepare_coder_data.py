@@ -1,20 +1,15 @@
 import json
-import os
 import csv
+import tiktoken
 
 from datasets import load_dataset
-from transformers import AutoTokenizer
 '''
     处理Coder数据集,使其能被脚本使用
 '''
 
-def estimate_num_tokens(text: str) -> int:
-    if not hasattr(estimate_num_tokens, "tokenizer"):
-        os.environ["TOKENIZERS_PARALLELISM"] = "false"
-        estimate_num_tokens.tokenizer = AutoTokenizer.from_pretrained(
-            "deepseek-ai/DeepSeek-V3.1"
-        )
-    return len(estimate_num_tokens.tokenizer.tokenize(text))
+def estimate_num_tokens(text:str) ->int:
+    enc = tiktoken.encoding_for_model("gpt-4o")
+    return len(enc.encode(text))
 
 def statistical_data(dataset):
     # 定义范围

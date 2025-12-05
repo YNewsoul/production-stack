@@ -1,9 +1,7 @@
 import argparse
 import json
-import os
 
-import numpy as np
-from transformers import AutoTokenizer
+import tiktoken
 
 parser = argparse.ArgumentParser(description="Process data percentage.")
 parser.add_argument(
@@ -40,13 +38,9 @@ elif args.dataset == "mixed_test":
     with open("mixed_arxiv_coder_preprocess_test_data.json", "r", encoding="utf-8") as file:
         data = json.load(file)
 
-def estimate_num_tokens(text: str) -> int:
-    if not hasattr(estimate_num_tokens, "tokenizer"):
-        os.environ["TOKENIZERS_PARALLELISM"] = "false"
-        estimate_num_tokens.tokenizer = AutoTokenizer.from_pretrained(
-            "gpt2"
-        )
-    return len(estimate_num_tokens.tokenizer.tokenize(text))
+def estimate_num_tokens(text:str) ->int:
+    enc = tiktoken.encoding_for_model("gpt-4o")
+    return len(enc.encode(text))
 
 num_of_ids = len(data)
 print(f"Number of IDs: {num_of_ids}")
