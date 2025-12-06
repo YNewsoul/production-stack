@@ -98,7 +98,6 @@ class RequestExecutor:
 
         extra_body = {}
         extra_body.update({
-            "min_p": 0.02,
             "top_p": 1,
             "top_k": -1,
             "frequency_penalty": 0,
@@ -213,8 +212,8 @@ class UserSession:
         self.end_times.append(response.end_time)
         self.latencys.append(response.end_time - response.send_time)
         self.ttft_slos.append(response.ttft_slo)
-        self.ttft_slo_comforms.append(True if response.ttft <= response.ttft_slo else False)
-        self.tpot_slo_comforms.append(True if self.tpots[-1] <= 50 else False)
+        self.ttft_slo_comforms.append('True' if response.ttft <= response.ttft_slo else 'False')
+        self.tpot_slo_comforms.append('True' if self.tpots[-1] <= 50 else 'False')
 
     def _select_ttft_slo(self, prompt_tokens: int) -> int:
         """根据提示 tokens 的分段选择对应的 ttft_slo"""
@@ -519,7 +518,10 @@ def main():
 
         if time.time() - last_summary_time > args.log_interval:
             summary = manager.summary(last_summary_time, time.time())
-            summary.to_csv(args.output, index=False,model='a')
+            if last_summary_time == start_time:
+                summary.to_csv(args.output, index=False,mode='w',header=True)
+            else:
+                summary.to_csv(args.output, index=False,mode='a',header=False)
             last_summary_time = time.time()
 
         if args.time is not None and time.time() - start_time > args.time:
