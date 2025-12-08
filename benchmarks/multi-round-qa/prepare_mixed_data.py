@@ -13,15 +13,15 @@ def load_json(path: str):
 def main():
     parser = argparse.ArgumentParser(description="Mix arxiv and coder datasets with random ordering.")
     parser.add_argument("--arxiv", default="arxiv_preprocess_data.json", help="Path to arxiv preprocessed json")
-    parser.add_argument("--coder", default="coder_preprocess_data.json", help="Path to coder preprocessed json")
+    parser.add_argument("--coder", default="sharegpt_preprocess_data.json", help="Path to coder preprocessed json")
     parser.add_argument("--arxiv-count", type=int, default=10000, help="Number of arxiv samples to use")
     parser.add_argument("--coder-count", type=int, default=10000, help="Number of coder samples to use")
     parser.add_argument(
         "--output",
-        default="mixed_arxiv_coder_preprocess_data.json",
+        default="mixed_arxiv_sharegpt_preprocess_data.json",
         help="Output path for the mixed dataset",
     )
-    parser.add_argument("--seed", type=int, default=42, help="Random seed for reproducibility")
+    parser.add_argument("--seed", type=int, default=36, help="Random seed for reproducibility")
     args = parser.parse_args()
 
     random.seed(args.seed)
