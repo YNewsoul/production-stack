@@ -11,14 +11,20 @@ def load_json(path: str):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Mix arxiv and coder datasets with random ordering.")
+    parser = argparse.ArgumentParser(description="Mix arxiv and sharegpt datasets with random ordering.")
     parser.add_argument("--arxiv", default="arxiv_preprocess_data.json", help="Path to arxiv preprocessed json")
-    parser.add_argument("--coder", default="sharegpt_preprocess_data.json", help="Path to coder preprocessed json")
-    parser.add_argument("--arxiv-count", type=int, default=10000, help="Number of arxiv samples to use")
-    parser.add_argument("--coder-count", type=int, default=10000, help="Number of coder samples to use")
+    parser.add_argument("--sharegpt", default="sharegpt_preprocess_data.json", help="Path to sharegpt preprocessed json")
+    parser.add_argument("--arxiv-count", type=int, default=5000, help="Number of arxiv samples to use")
+    parser.add_argument("--sharegpt-count", type=int, default=5000, help="Number of sharegpt samples to use")
+    parser.add_argument(
+        "--arxiv-weight", type=float, default=1.0, help="Sampling weight for arxiv when mixing (e.g., 2 for 2:1)"
+    )
+    parser.add_argument(
+        "--sharegpt-weight",type=float,default=1.0, help="Sampling weight for sharegpt when mixing (e.g., 1 for 2:1)",
+    )
     parser.add_argument(
         "--output",
-        default="mixed_arxiv_sharegpt_preprocess_data.json",
+        default="mixed_arxiv_sharegpt_v1_preprocess_data.json",
         help="Output path for the mixed dataset",
     )
     parser.add_argument("--seed", type=int, default=36, help="Random seed for reproducibility")
@@ -26,8 +32,11 @@ def main():
 
     random.seed(args.seed)
 
+    if args.arxiv_weight <= 0 or args.sharegpt_weight <= 0:
+        parser.error("arxiv-weight and sharegpt-weight must be positive numbers.")
+
     arxiv_data = load_json(args.arxiv)
-    coder_data = load_json(args.coder)
+    sharegpt_data = load_json(args.sharegpt)
 
     # 按需抽样或直接全部使用
     if len(arxiv_data) < args.arxiv_count:
@@ -36,34 +45,38 @@ def main():
     else:
         arxiv_selected = random.sample(arxiv_data, args.arxiv_count)
 
-    if len(coder_data) < args.coder_count:
-        print(f"[warn] coder dataset has only {len(coder_data)} items; will use all of them.")
-        coder_selected = coder_data.copy()
+    if len(sharegpt_data) < args.sharegpt_count:
+        print(f"[warn] sharegpt dataset has only {len(sharegpt_data)} items; will use all of them.")
+        sharegpt_selected = sharegpt_data.copy()
     else:
-        coder_selected = random.sample(coder_data, args.coder_count)
+        sharegpt_selected = random.sample(sharegpt_data, args.sharegpt_count)
 
     # 从仍有剩余的列表中随机选择一条加入混合数据
     mixed = []
     arxiv_idx = 0
-    coder_idx = 0
+    sharegpt_idx = 0
     # 预先打乱子集，避免随机选择时的偏置
     random.shuffle(arxiv_selected)
-    random.shuffle(coder_selected)
+    random.shuffle(sharegpt_selected)
 
-    while arxiv_idx < len(arxiv_selected) or coder_idx < len(coder_selected):
+    while arxiv_idx < len(arxiv_selected) or sharegpt_idx < len(sharegpt_selected):
         available_sources = []
+        weights = []
         if arxiv_idx < len(arxiv_selected):
             available_sources.append("arxiv")
-        if coder_idx < len(coder_selected):
-            available_sources.append("coder")
+            weights.append(args.arxiv_weight)
+        if sharegpt_idx < len(sharegpt_selected):
+            available_sources.append("sharegpt")
+            weights.append(args.sharegpt_weight)
 
-        pick = random.choice(available_sources)
+        # Weighted pick; falls back to the only available source when one list is exhausted
+        pick = random.choices(available_sources, weights=weights, k=1)[0]
         if pick == "arxiv":
             mixed.append(arxiv_selected[arxiv_idx])
             arxiv_idx += 1
         else:
-            mixed.append(coder_selected[coder_idx])
-            coder_idx += 1
+            mixed.append(sharegpt_selected[sharegpt_idx])
+            sharegpt_idx += 1
 
     # 重新分配连续 id，避免重复
     for idx, item in enumerate(mixed):

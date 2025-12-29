@@ -1,7 +1,6 @@
 import argparse
 import csv
 import json
-
 import tiktoken
 
 
@@ -9,59 +8,10 @@ def estimate_num_tokens(text: str) -> int:
     enc = tiktoken.encoding_for_model("gpt-4o")
     return len(enc.encode(text, allowed_special={"<|endoftext|>"}))
 
-
-def load_data(path: str):
-    with open(path, "r", encoding="utf-8") as f:
-        return json.load(f)
-
-
-def save_data(data, path: str):
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
-
-
-def keep_first_round(conversations):
-    first_human = None
-    first_gpt = None
-    for conv in conversations:
-        role = conv.get("from")
-        if role == "human" and first_human is None:
-            first_human = conv
-        elif role == "gpt" and first_human is not None:
-            first_gpt = conv
-            break
-    if first_human and first_gpt:
-        return [first_human, first_gpt]
-    return []
-
-
-def process(raw_data):
-    total = len(raw_data)
-    print(f"原始数据量: {total}")
-    # 过滤掉从 gpt 开始的对话
-    filtered = [
-        d for d in raw_data
-        if d.get("conversations") and d["conversations"][0].get("from") != "gpt"
-    ]
-    print(f"过滤掉以 gpt 开头后的数据量: {len(filtered)}")
-
-    kept = []
-    count = 0
-    for d in filtered:
-        convs = keep_first_round(d["conversations"])
-        if not convs:
-            continue
-        d["conversations"] = convs
-        kept.append(d)
-        count += 1
-        if count % 1000 == 0:
-            print(f"已处理 {count}")
-    return kept
-
 def statistical_data(dataset, csv_path: str = "sharegpt_token_stats.csv"):
     # 定义人类提问和 gpt 回复的 token 范围
     human_ranges = [(i, i + 500) for i in range(0, 4000, 500)]
-    gpt_ranges = [(i, i + 200) for i in range(0, 2000, 200)]
+    gpt_ranges = [(i, i + 50) for i in range(0, 400, 50)]
 
     stats = {}
     for h_start, h_end in human_ranges:
@@ -74,10 +24,10 @@ def statistical_data(dataset, csv_path: str = "sharegpt_token_stats.csv"):
     for item in dataset:
         if len(item.get("conversations", [])) < 2:
             continue
-        human_tokens = item["conversations"][0].get("num_tokens") or estimate_num_tokens(
+        human_tokens = estimate_num_tokens(
             item["conversations"][0]["value"]
         )
-        gpt_tokens = item["conversations"][1].get("num_tokens") or estimate_num_tokens(
+        gpt_tokens = estimate_num_tokens(
             item["conversations"][1]["value"]
         )
 
@@ -105,6 +55,62 @@ def statistical_data(dataset, csv_path: str = "sharegpt_token_stats.csv"):
 
     print(f"token 范围统计数据已保存到 {csv_path}")
 
+def load_data(path: str):
+    with open(path, "r", encoding="utf-8") as f:
+        return json.load(f)
+
+
+def save_data(data, path: str):
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+
+def keep_first_round(conversations):
+    first_human = None
+    first_gpt = None
+    for conv in conversations:
+        role = conv.get("from")
+        if role == "human" and first_human is None:
+            first_human = conv
+        elif role == "gpt" and first_human is not None:
+            first_gpt = conv
+            break
+    if first_human and first_gpt:
+        return [first_human, first_gpt]
+    return []
+
+def process(raw_data):
+    total = len(raw_data)
+    print(f"原始数据量: {total}")
+    # 过滤掉从 gpt 开始的对话
+    filtered = [
+        d for d in raw_data
+        if d.get("conversations") and d["conversations"][0].get("from") != "gpt"
+    ]
+    print(f"过滤掉以 gpt 开头后的数据量: {len(filtered)}")
+
+    kept = []
+    count = 0
+    for d in filtered:
+        convs = keep_first_round(d["conversations"])
+        if not convs:
+            continue
+        
+        human_question = convs[0].get("value")
+        if estimate_num_tokens(human_question) > 1000:
+            continue
+        gpt_answer = convs[1].get("value") 
+        if  estimate_num_tokens(gpt_answer) > 250:
+            continue
+
+        d["conversations"] = convs
+        kept.append(d)
+        count += 1
+        if count % 1000 == 0:
+            print(f"已处理 {count} 条数据")
+    return kept
+
+
+
 
 def main():
     parser = argparse.ArgumentParser(description="Process ShareGPT data to first round only.")
@@ -131,13 +137,13 @@ def main():
     raw_data = load_data(args.input)
     kept = process(raw_data)
 
-    print(f"保留首轮对话后的数据量: {len(kept)}")
+    print(f"保留首轮对话及过滤输出长度后的数据量: {len(kept)}")
 
     # 统计数据
     statistical_data(kept, args.stats_output)
 
-    # save_data(kept, args.output)
-    # print(f"已写入: {args.output}")
+    save_data(kept, args.output)
+    print(f"已写入: {args.output}")
 
 
 if __name__ == "__main__":

@@ -1,7 +1,11 @@
 from datasets import load_dataset
 import json
 import csv
+import tiktoken
 
+def estimate_num_tokens(text: str) -> int:
+    enc = tiktoken.encoding_for_model("gpt-4o")
+    return len(enc.encode(text, allowed_special={"<|endoftext|>"}))
 
 def statistical_data(dataset):
     # 定义范围
@@ -18,8 +22,8 @@ def statistical_data(dataset):
 
     # 统计数据
     for item in dataset:
-        source_tokens = item["source_num_tokens"]
-        summary_tokens = item["summary_num_tokens"]
+        source_tokens = estimate_num_tokens(item["conversations"][0]["value"])
+        summary_tokens = estimate_num_tokens(item["conversations"][1]["value"])
         
         # 找到对应的source范围
         source_range = None
@@ -67,7 +71,8 @@ def statistical_data(dataset):
 ds = load_dataset("whu9/arxiv_summarization_postprocess")
 
 # 只取20%的训练数据
-dataset = ds["train"].train_test_split(test_size=0.93, seed=42)["train"]
+# dataset = ds["train"].train_test_split(test_size=0.9, seed=42)["train"]
+dataset = ds["train"].train_test_split(test_size=0.5, seed=42)["train"]
 
 
 # 验证数据量
@@ -91,14 +96,23 @@ print(f"采样比例: {len(dataset)/len(ds['train'])*100:.1f}%")
 # 转换为目标JSON格式
 converted_data = []
 id = 0
+count = 0
 for item in dataset:
-    if 1000< item["source_num_tokens"] <28000  and item["summary_num_tokens"]<400:
+    count += 1
+    if item["source_num_tokens"] < 15000:
+        continue
+    input_tokens = estimate_num_tokens(item["source"])
+    # output_tokens = estimate_num_tokens(item["summary"])
+    if 15000 < input_tokens < 28000 :
         converted_item = {
             "id": id,
             "conversations": [{"from":"human","value":item["source"]},{"from":"gpt","value":item["summary"]}]
         }
         converted_data.append(converted_item)
         id += 1
+        if id % 500 == 0:
+            print(f"已处理 {id}/{count} 条数据")
+    
 
 print(f"处理后得到的数据:{len(converted_data)}")
 # 写入输出JSON文件
@@ -106,7 +120,7 @@ output_path = "./arxiv_preprocess_data.json"
 with open(output_path, "w", encoding="utf-8") as f:
     json.dump(converted_data, f, indent=2, ensure_ascii=False)
 # 统计数据
-statistical_data(dataset)
+statistical_data(converted_data)
 
 print(f"arxiv数据集预处理文件已成功转换并保存到 {output_path}")
 

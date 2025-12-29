@@ -4,6 +4,7 @@ import json
 import logging
 import time
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Optional
 import os
 import openai
@@ -27,6 +28,7 @@ class WorkloadConfig:
     dataset:str
     use_predict: bool
     round_data: int
+    maxtokens_ids:list[int]
 
 @dataclass
 class UserConfig:
@@ -82,6 +84,7 @@ class Response:
     predict_tokens:int
     ttft_slo:float
     request_data_id:int
+    dataset_predict_tokens:int
 
 class RequestExecutor:
     """请求执行器类，负责处理与OpenAI API的交互，包括发送请求和处理响应。"""
@@ -154,6 +157,7 @@ class RequestExecutor:
             max_tokens=request_data["max_tokens"],
             ttft_slo=request_data["ttft_slo"],
             request_data_id=request_data["request_data_id"],
+            dataset_predict_tokens = request_data["dataset_predict_tokens"],
         )
 
     def launch_request(self,request_data,finish_callback,extra_headers=None):
@@ -170,18 +174,20 @@ class RequestExecutor:
 
 class UserSession:
     """用户会话类，模拟单个用户与系统的交互过程"""
-    def __init__(self, user_config: UserConfig, sharegpt_data=None):
+    def __init__(self, user_config: UserConfig, sharegpt_data=None, max_tokens=None):
         self.user_config = user_config
         self.last_request_time = None
         self.chat_history = ChatHistory()
         self.question_id = 0
         self.conversation_id = str(uuid.uuid4())
         self.sharegpt_data = sharegpt_data
+        self.max_tokens = max_tokens
         self.has_unfinished_request = False
 
         # 存储性能指标
         self.prompt_lengths = []
         self.generation_lengths = []
+        self.dataset_generation_lengths = []
         self.ttfts = []
         self.tpots = []
         self.request_data_ids = []
@@ -213,6 +219,7 @@ class UserSession:
         self.generation_lengths.append(int(response.generation_tokens))
         self.predict_generation_lengths.append(int(response.predict_tokens))
         self.max_generation_lengths.append(int(response.max_tokens))
+        self.dataset_generation_lengths.append(int(response.dataset_predict_tokens))
         self.ttfts.append(float(f"{response.ttft:.2f}"))
         self.tpots.append(float(f"{(response.generation_time)*1000/response.generation_tokens:.2f}"))
         self.generation_times.append(float(f"{response.generation_time:.2f}"))
@@ -237,10 +244,12 @@ class UserSession:
         prompt = prompt_data["value"]
         prompt_tokens = prompt_data.get("num_tokens")
 
-        max_tokens = 2*self.sharegpt_data["conversations"][2 * self.question_id + 1]["num_tokens"]
+        dataset_predict_tokens = 2*self.sharegpt_data["conversations"][2 * self.question_id + 1]["num_tokens"]
 
-        # 做个约束
-        max_tokens = min(max_tokens, self.user_config.answer_len)
+        max_tokens = self.max_tokens
+        if max_tokens is None:
+            max_tokens = min(dataset_predict_tokens, self.user_config.answer_len)
+        # max_tokens = self.user_config.answer_len
         self.question_id += 1
 
         # 将用户查询添加到聊天历史
@@ -264,7 +273,8 @@ class UserSession:
             "predict_tokens":predict_tokens,
             "max_tokens":max_tokens,
             "ttft_slo":ttft_slo,
-            "request_data_id":self.sharegpt_data["id"]}
+            "request_data_id":self.sharegpt_data["id"],
+            "dataset_predict_tokens":dataset_predict_tokens}
 
         # 发送请求
         request_executor.launch_request(
@@ -310,6 +320,7 @@ class UserSession:
         df["p_tokens"] = self.prompt_lengths
         df["d_tokens"] = self.generation_lengths
         df["max_tokens"] = self.max_generation_lengths
+        df["dataset_predict_tokens"] = self.dataset_generation_lengths
         df["predict_tokens"] = self.predict_generation_lengths
         df["send_time"] = self.send_times
         df["end_time"] = self.end_times
@@ -348,7 +359,7 @@ class UserSessionManager:
             d for d in self.sharegpt_data
             if d["num_round"] >= 2 * self.workload_config.num_rounds and  d["num_round"]%2 == 0
         ]
-        logger.info(f"总请求个数:{len(self.sharegpt_data)}")
+        logger.info(f"总请求个数:{len(self.sharegpt_data)},从第{self.init_user_id}个开始")
 
     def _create_user_session(self):
         """创建一个新的用户会话"""
@@ -357,7 +368,8 @@ class UserSessionManager:
         # 根据是否使用ShareGPT数据集创建不同的用户会话
         # 计算ShareGPT数据集中的数据索引
         sharegpt_data_id = (self.user_id - self.init_user_id)%self.workload_config.round_data + self.init_user_id
-        user_session = UserSession(user_config, self.sharegpt_data[sharegpt_data_id])
+        max_tokens = self.workload_config.maxtokens_ids[sharegpt_data_id]
+        user_session = UserSession(user_config, self.sharegpt_data[sharegpt_data_id], max_tokens)
         self.sessions.append(user_session)
 
     def _remove_finished_sessions(self):
@@ -471,6 +483,7 @@ def parse_arguments():
     parser.add_argument("--use-predict",type=bool,default=False)
     parser.add_argument("--log-interval",type=int,default=60)
     parser.add_argument("--round-data",type=int,default=1)
+    parser.add_argument("--use-maxtokens-file",type=bool,default=True)
 
     return parser.parse_args()
 
@@ -492,6 +505,11 @@ def main():
     if args.use_predict:
         predictor = Predictor()
 
+    maxtokens_ids = None
+    if args.use_maxtokens_file:
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        maxtokens_file = os.path.join(current_dir,"maxtokens_file.txt")
+        maxtokens_ids =  [int(line.strip()) for line in Path(maxtokens_file).read_text(encoding="utf-8").splitlines() if line.strip()]
     # 创建工作负载配置对象，包含所有测试参数
     workload_config = WorkloadConfig(
         answer_len=args.answer_len,
@@ -500,7 +518,8 @@ def main():
         model=args.model,
         dataset=args.dataset,
         round_data=args.round_data,
-        use_predict=args.use_predict
+        use_predict=args.use_predict,
+        maxtokens_ids=maxtokens_ids
     )
 
     # 创建用户会话管理器，负责管理所有用户会话
