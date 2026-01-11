@@ -14,13 +14,13 @@ def main():
     parser = argparse.ArgumentParser(description="Mix arxiv and sharegpt datasets with random ordering.")
     parser.add_argument("--arxiv", default="arxiv_preprocess_data.json", help="Path to arxiv preprocessed json")
     parser.add_argument("--sharegpt", default="sharegpt_preprocess_data.json", help="Path to sharegpt preprocessed json")
-    parser.add_argument("--arxiv-count", type=int, default=5000, help="Number of arxiv samples to use")
-    parser.add_argument("--sharegpt-count", type=int, default=5000, help="Number of sharegpt samples to use")
+    parser.add_argument("--arxiv-count", type=int, default=4000, help="Number of arxiv samples to use")
+    parser.add_argument("--sharegpt-count", type=int, default=10000, help="Number of sharegpt samples to use")
     parser.add_argument(
         "--arxiv-weight", type=float, default=1.0, help="Sampling weight for arxiv when mixing (e.g., 2 for 2:1)"
     )
     parser.add_argument(
-        "--sharegpt-weight",type=float,default=1.0, help="Sampling weight for sharegpt when mixing (e.g., 1 for 2:1)",
+        "--sharegpt-weight",type=float,default=2.5, help="Sampling weight for sharegpt when mixing (e.g., 1 for 2:1)",
     )
     parser.add_argument(
         "--output",

@@ -1,4 +1,4 @@
 mixed_arxiv_sharegpt_v1.json
-    5000 + 5000
+    4000 + 10000
     arxiv_sharegpt
         >15000输入
